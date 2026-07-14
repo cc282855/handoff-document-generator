@@ -5,7 +5,12 @@ argument-hint: [optional project notes]
 
 # Generate Handoff Document
 
-The user invoked `/handoff`.
+The user invoked `/handoff`, asked for a handoff in natural language, or this command was entered by the `AUTO_HANDOFF_REQUEST` continuation marker.
+
+## Modes
+
+- **Manual mode:** `/handoff`, `/交接文档`, or a natural-language request. This mode must work even when plugin hooks are disabled or untrusted.
+- **Automatic mode:** only when the current continuation prompt contains a valid `AUTO_HANDOFF_REQUEST` marker with `session_id`, `nonce`, `trigger`, `used`, and `window`. Treat `trigger=precompact` as a compression fallback; never claim it reached 98%.
 
 ## Goal
 
@@ -17,18 +22,31 @@ Create a file named `HANDOFF.md` in the current workspace so a completely new AI
    - Identify the project type, important files, existing assets, and current state.
    - Prefer `rg --files`, `git status --short`, package manifests, README files, docs, and project config.
    - If this is a projectless chat or no meaningful project files exist, still create a handoff focused on conversation context and local Codex/plugin state.
-2. Create `HANDOFF.md` at the workspace root.
+   - Never read or copy `auth.json`, values from `.env*`, cookies, credentials, tokens, private keys, raw transcript/JSONL, hidden reasoning, Codex logs, SQLite databases, or screenshots.
+2. Create `HANDOFF.md` at the workspace root with an atomic same-directory write (or `apply_patch` when that is the available atomic editor).
 3. Use the exact structure required in this command. Keep the document comprehensive and detailed enough for another AI six months from now.
-4. After saving `HANDOFF.md`, create a new Codex conversation when the `create_thread` tool is available:
-   - Use a project target when a saved project is clearly available.
-   - Otherwise use a projectless target.
-   - Initial prompt must include: `Read HANDOFF.md first and continue the project.`
-   - Include either the full HANDOFF.md content or a clear absolute path to the generated file.
-5. If the current environment cannot create a new Codex conversation or attach/import the file automatically, say that clearly and provide the exact generated file path.
+4. Run the deterministic scanner before creating a task:
+   - Execute `node "<plugin-root>/scripts/context-handoff.mjs" scan "<absolute-HANDOFF-path>"`.
+   - A non-empty finding list blocks task creation. Report only rule IDs and line numbers; never echo a matched value.
+   - After a clean scan, compute the file SHA-256.
+5. Prepare a clean Codex task using this exact tool order when tools exist:
+   - `list_projects`, then `list_threads` to identify the source title and existing sequence.
+   - `create_thread`. Never use `fork_thread`.
+   - `set_thread_title` to `<sanitized source title>（续接 N）`, where N is one greater than the largest same-base sequence.
+   - `read_thread` to verify the child task and initial prompt.
+   - Optionally `navigate_to_codex_page` only after verification.
+   - Use a registered project only when its canonical path matches the active workspace; otherwise use a projectless target.
+6. The child task's initial prompt must start with this exact first line:
+
+   `Read HANDOFF.md first and continue the project.`
+
+   Include the absolute HANDOFF path, its SHA-256, the source `session_id`/nonce in automatic mode, and the complete scanned HANDOFF content when it fits the tool input.
+7. In automatic mode, advance the nonce-protected checkpoint through `handoff_written`, `scan_passed`, `child_created`, `title_set`, and `complete`. Pass the raw child ID only to the `child_created` checkpoint; the runtime stores only its hash.
+8. If task-management tools are missing or any create/title/readback step is unverified, do not claim success. Report the exact HANDOFF path and stop; never create a duplicate child after `child_created` has been recorded.
 
 ## Important Limitation
 
-Codex plugin commands cannot reliably click the native Codex UI or attach local files into the composer. Prefer the Codex thread tool when available. If it is unavailable, do not fake UI automation success.
+Codex plugin commands cannot reliably click the native Codex UI or attach local files into the composer. Prefer Codex task tools when available. If unavailable, do not fake UI automation, attachment, title, navigation, or task-creation success.
 
 ## HANDOFF.md Structure
 
@@ -156,3 +174,4 @@ Nothing important should be missing.
 - Include known limitations and blocked items.
 - Do not invent business context that is not present. Mark unknowns explicitly.
 - Save the final output as `HANDOFF.md`.
+- Do not include raw Hook input, rollout records, state files, hidden reasoning, or secrets in the document.
