@@ -1,7 +1,7 @@
 {
   "name": "handoff-document-generator",
-  "version": "0.2.0",
-  "description": "生成全面的 HANDOFF.md，并在本地上下文接近上限时安全准备后续任务。",
+  "version": "0.3.0",
+  "description": "生成全面的 HANDOFF.md，并在 Codex 自动压缩前以保守安全水位准备后续任务。",
   "author": {
     "name": "Local developer"
   },
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "交接文档生成器",
     "shortDescription": "生成 HANDOFF.md 并准备新对话继续项目。",
-    "longDescription": "交接文档生成器保留手动交接流程，并通过受信任的本地 Hook 读取 Codex 结构化 token_count 事件；达到 98% 或遇到原生压缩前置事件时，安全生成 HANDOFF.md 并准备带连续标题的新任务。",
+    "longDescription": "交接文档生成器保留手动交接流程，并通过受信任的本地 Hook 读取 Codex 结构化 token_count 事件；在约 70% 的插件安全水位提前生成 HANDOFF.md，遇到原生自动压缩时进行诚实兜底，并准备带连续标题的干净新任务。",
     "developerName": "Local developer",
     "category": "生产率",
     "capabilities": [

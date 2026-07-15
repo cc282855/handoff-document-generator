@@ -1,4 +1,6 @@
 .codex/state/
+.codex/ralph-loop/
+.codex/hooks.json
 work/
 __pycache__/
 *.py[cod]
@@ -9,6 +11,7 @@ HANDOFF*.md
 PLUGIN_DATA/
 plugin-data/
 context-handoff-v1/
+context-handoff-v2/
 runtime-state/
 
 # Credentials and local environment
