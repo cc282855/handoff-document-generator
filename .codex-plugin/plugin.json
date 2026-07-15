@@ -1,25 +1,27 @@
 {
   "name": "handoff-document-generator",
-  "version": "0.1.0",
-  "description": "Generate a comprehensive HANDOFF.md and prepare a continuation conversation.",
+  "version": "0.3.0",
+  "description": "生成全面的 HANDOFF.md，并在 Codex 自动压缩前以保守安全水位准备后续任务。",
   "author": {
-    "name": "cc282855"
+    "name": "Local developer"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "交接文档生成器",
-    "shortDescription": "生成 HANDOFF.md，并准备新的 Codex 对话继续项目。",
-    "longDescription": "交接文档生成器会在当前项目中创建完整的 HANDOFF.md，让新的 AI 对话无需读取历史聊天也能继续项目。它还会尽可能创建新的 Codex 对话，并把交接内容放入初始提示中。",
-    "developerName": "cc282855",
-    "category": "Productivity",
+    "shortDescription": "生成 HANDOFF.md 并准备新对话继续项目。",
+    "longDescription": "交接文档生成器保留手动交接流程，并通过受信任的本地 Hook 读取 Codex 结构化 token_count 事件；在约 70% 的插件安全水位提前生成 HANDOFF.md，遇到原生自动压缩时进行诚实兜底，并准备带连续标题的干净新任务。",
+    "developerName": "Local developer",
+    "category": "生产率",
     "capabilities": [
       "生成项目交接文档",
       "总结当前状态和后续任务",
-      "准备新 Codex 对话"
+      "识别本地上下文额度",
+      "准备连续编号的新 Codex 任务"
     ],
     "defaultPrompt": [
       "/交接文档",
-      "/handoff"
+      "/handoff",
+      "生成交接文档并在新任务中继续"
     ],
     "brandColor": "#2563EB"
   }

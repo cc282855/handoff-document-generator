@@ -1,0 +1,8 @@
+{"type":"session_meta","payload":{"id":"synthetic-session-0001"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":258400,"last_token_usage":{"input_tokens":209260,"total_tokens":211103},"total_token_usage":{"input_tokens":9999999}}}}
+{malformed synthetic record
+{"type":"compacted","payload":{"replacement_history":[]}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":258400,"last_token_usage":{"input_tokens":0,"total_tokens":20082},"total_token_usage":{"input_tokens":1}}}}
+{"type":"event_msg","payload":{"type":"context_compacted"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":258400,"last_token_usage":{"input_tokens":136000,"total_tokens":136200},"total_token_usage":{"input_tokens":2}}}}
+{"type":"event_msg","payload":
