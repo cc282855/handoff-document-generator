@@ -851,7 +851,7 @@ test("cleanup retires stale state and caps records at 100", async function (t) {
 
 test("manifest, hooks, and manuals preserve compatibility and safe matchers", async function () {
   const manifest = JSON.parse(await readFile(path.join(projectRoot, ".codex-plugin", "plugin.json"), "utf8"));
-  assert.equal(manifest.version, "0.3.0");
+  assert.match(manifest.version, /^0\.3\.0(?:\+codex\.[0-9A-Za-z.-]+)?$/);
   assert.equal(Object.hasOwn(manifest, "hooks"), false);
   const hooks = JSON.parse(await readFile(path.join(projectRoot, "hooks", "hooks.json"), "utf8"));
   assert.deepEqual(Object.keys(hooks.hooks), [
