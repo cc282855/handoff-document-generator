@@ -863,7 +863,14 @@ test("manifest, hooks, and manuals preserve compatibility and safe matchers", as
   ]);
   assert.equal(hooks.hooks.PreCompact[0].matcher, "^auto$");
   assert.equal(hooks.hooks.PostCompact[0].matcher, "^auto$");
-  assert.match(hooks.hooks.Stop[0].hooks[0].command, /PLUGIN_ROOT/);
+  const handlers = Object.values(hooks.hooks).flatMap(function (groups) {
+    return groups.flatMap(function (group) { return group.hooks; });
+  });
+  assert.equal(handlers.length, 5);
+  for (const handler of handlers) {
+    assert.equal(handler.command, 'node "${PLUGIN_ROOT}/scripts/context-handoff.mjs" hook');
+    assert.equal(handler.commandWindows, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -Command node "$env:PLUGIN_ROOT/scripts/context-handoff.mjs" hook');
+  }
   const skill = await readFile(path.join(projectRoot, "skills", "generate-handoff-document", "SKILL.md"), "utf8");
   const english = await readFile(path.join(projectRoot, "commands", "handoff.md"), "utf8");
   const chinese = await readFile(path.join(projectRoot, "commands", "交接文档.md"), "utf8");
