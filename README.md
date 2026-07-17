@@ -2,6 +2,125 @@
 
 handoff-document-generator 0.3.0 保留 /handoff、/交接文档和自然语言手动交接，并增加“在 Codex 自动压缩前尽量完成安全交接”的自动流程。它生成 HANDOFF.md、进行确定性秘密扫描、创建干净的新任务，并把任务名延续为简洁中文标题加 （续接 N）。
 
+当前基础版本为 `0.3.0`；实际安装构建号以 `.codex-plugin/plugin.json` 中的完整版本为准。
+
+## 项目作用
+
+这个插件用于解决 Codex 长任务在上下文压缩、任务中断或需要换新任务继续时的信息断层问题。主要能力包括：
+
+- 手动交接：输入 `/handoff`、`/交接文档`，或直接说“生成交接文档并继续”，即可生成结构完整的 `HANDOFF.md`。
+- 自动交接：读取经过校验的 Codex 结构化 `token_count` 记录，在插件安全水位附近提前请求交接。
+- 压缩后兜底：如果 Codex 已先发生自动压缩，插件会在下一次受支持的 Hook 继续请求交接；此时即使界面百分比已经下降，也可能创建续接任务。
+- 安全扫描：创建新任务前检查 `HANDOFF.md`，阻止密钥、令牌、交接 capability 等敏感内容进入新任务提示。
+- 连续任务：创建干净的新 Codex 任务，不复制完整旧对话；任务标题自动使用 `（续接 N）` 连续编号。
+- 崩溃恢复：交接状态采用 request、lease 和 checkpoint 状态机，降低重复创建任务或丢失交接进度的风险。
+
+## 使用方法
+
+### 手动交接
+
+在需要继续的项目目录中启动 Codex，然后使用任一方式：
+
+~~~text
+/handoff
+/交接文档
+生成交接文档并在新任务中继续
+~~~
+
+插件会在项目根目录生成 `HANDOFF.md`，完成安全扫描，再创建并核验续接任务。新任务只接收 `HANDOFF.md` 的绝对路径、SHA-256 和非敏感 `handoff_id`，不会复制完整旧对话。
+
+### 自动交接
+
+自动模式需要启用并信任 Hooks：
+
+1. 确认 `~/.codex/config.toml` 中包含：
+
+   ~~~toml
+   [features]
+   hooks = true
+   ~~~
+
+2. 重新启动 Codex CLI，在输入框执行 `/hooks`。
+3. 进入 `PreToolUse`、`PostToolUse`、`Stop`、`PreCompact` 和 `PostCompact`，审阅来源与命令。
+4. 对确认来自本插件的 Hook 按 `t` 信任，并保持复选框为 `[x]`。
+5. 新建一个 Codex 任务测试插件；已打开的旧任务不会可靠地热加载新版技能和 Hook。
+
+达到安全水位后，插件会发出最小交接标记并启动交接流程。如果原生自动压缩先发生，下一次受支持 Hook 会继续兜底交接。
+
+## 部署方法
+
+### 环境要求
+
+- 已安装支持插件和 Hooks 的 Codex CLI。
+- Node.js 20 或更高版本，并且 `node` 可被 Codex Hook 环境解析。
+- Git；Windows 推荐使用 PowerShell 7 或系统 PowerShell。
+- 首次安装或 Hook 内容更新后，必须人工审阅并信任 Hook，不要使用绕过信任的启动参数。
+
+### 从 GitHub 部署
+
+下面以 PowerShell 和 `E:\CodexPlugins` 为例；可以替换成自己的目录：
+
+~~~powershell
+$root = "E:\CodexPlugins"
+New-Item -ItemType Directory -Force -Path $root | Out-Null
+git clone https://github.com/cc282855/handoff-document-generator.git "$root\handoff-document-generator-plugin"
+New-Item -ItemType Directory -Force -Path "$root\.agents\plugins" | Out-Null
+~~~
+
+在 `$root\.agents\plugins\marketplace.json` 写入：
+
+~~~json
+{
+  "name": "handoff-local",
+  "interface": {
+    "displayName": "交接文档生成器"
+  },
+  "plugins": [
+    {
+      "name": "handoff-document-generator",
+      "source": {
+        "source": "local",
+        "path": "./handoff-document-generator-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
+~~~
+
+随后注册市场并安装插件：
+
+~~~powershell
+codex plugin marketplace add "E:\CodexPlugins"
+codex plugin add handoff-document-generator@handoff-local
+~~~
+
+完成后重新启动 Codex CLI，通过 `/hooks` 审阅并信任本插件的五类 Hook。
+
+### 更新已部署版本
+
+~~~powershell
+Set-Location "E:\CodexPlugins\handoff-document-generator-plugin"
+git pull
+codex plugin add handoff-document-generator@handoff-local
+~~~
+
+安装完成后请新建 Codex 任务测试，避免旧任务继续使用已缓存的旧技能或 Hook。
+
+### 验证部署
+
+~~~powershell
+codex plugin list
+node --test tests/context-handoff.test.mjs
+git diff --check
+~~~
+
+当前恢复版的完整测试结果为 `38/38` 通过。Windows Hook 使用 Codex 解析的 `node` 直接启动运行时，避免嵌套 PowerShell 启动造成的路径和引号问题。
+
 ## 先澄清：258k、UI 百分比和自动压缩
 
 截图中的 258k 是当前模型的有效上下文窗口，不是自动压缩触发点。Codex 的 Agent Loop 在内部活动 token 计数超过 auto-compact limit 时触发压缩；当前开源实现会把默认自动压缩上限解析为模型窗口的 90%，同时模型配置还可能先对公开窗口应用 effective-context-window 百分比。长单轮在 needs_follow_up 仍为 true 时可先在回合中途压缩，正常 Stop 只在不再需要 follow-up 时发生。

@@ -62,16 +62,22 @@ Do not put the request or lease into HANDOFF.md, a title, a log, a commit, or th
    {"lease":"<lease>","next_state":"handoff_written","document_path":"<absolute path>","document_sha256":"<64 lowercase hex>"}
    ~~~
 
-4. Scan the exact file bytes. Manual mode uses:
+4. Scan the exact file bytes. In manual mode, invoke the runtime as a direct child process with this argv; do not interpolate the document path into shell text or argv:
 
-   ~~~text
-   node "<plugin-root>/scripts/context-handoff.mjs" scan "<absolute-HANDOFF-path>"
+   ~~~json
+   ["node","<plugin-root>/scripts/context-handoff.mjs","scan"]
    ~~~
 
-   Automatic mode must instead pass the lease and document_path through standard input to:
+   Pass this bounded JSON object as the child process standard input:
 
-   ~~~text
-   node "<plugin-root>/scripts/context-handoff.mjs" scan-authorized
+   ~~~json
+   {"workspace_root":"<absolute workspace root>","document_path":"<absolute HANDOFF path>"}
+   ~~~
+
+   Automatic mode must instead pass the lease and document_path through standard input to this direct child-process argv:
+
+   ~~~json
+   ["node","<plugin-root>/scripts/context-handoff.mjs","scan-authorized"]
    ~~~
 
    The authorized scanner compares the document against the hashes of the current lease and every retired request, so even an unlabeled raw capability blocks continuation.

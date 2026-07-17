@@ -38,6 +38,7 @@ import {
   releaseLock,
   scanFile,
   scanFileAuthorized,
+  scanManualRequest,
   scanSecrets,
   validateTranscriptPath,
 } from "../scripts/context-handoff.mjs";
@@ -227,6 +228,7 @@ test("PreToolUse denies at most one original tool and marks it not executed", as
   const first = await handleHookEvent(hookInput(f, "PreToolUse", { tool_name: "Bash" }), f);
   assert.equal(first.hookSpecificOutput.hookEventName, "PreToolUse");
   assert.equal(first.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(first.hookSpecificOutput.permissionDecisionReason, /Handoff Document Generator plugin/);
   assert.match(first.hookSpecificOutput.permissionDecisionReason, /not executed/i);
   assert.ok(markerFromResult(first));
   assert.equal(first.hookSpecificOutput.additionalContext.split(/\r?\n/).length, 1);
@@ -292,6 +294,32 @@ test("hook CLI accepts a multi-megabyte PostToolUse payload instead of failing o
   });
   assert.equal(post.status, 0);
   assert.ok(markerFromResult(JSON.parse(post.stdout)));
+});
+
+test("hook CLI reports parse and runtime failures with one sanitized diagnostic", async function (t) {
+  const script = path.join(projectRoot, "scripts", "context-handoff.mjs");
+  const malformed = spawnSync(process.execPath, [script, "hook"], {
+    cwd: projectRoot,
+    encoding: "utf8",
+    input: "{",
+  });
+  assert.equal(malformed.status, 1);
+  assert.equal(malformed.stdout, "");
+  assert.equal(malformed.stderr, "HANDOFF_HOOK_FAILURE\n");
+
+  const f = await fixtureSession(t, tokenEvent(179792, 258400));
+  await writeFile(path.join(f.codexHome, "plugin-data"), "not a directory");
+  const runtime = spawnSync(process.execPath, [script, "hook"], {
+    cwd: projectRoot,
+    env: { ...process.env, CODEX_HOME: f.codexHome },
+    encoding: "utf8",
+    input: JSON.stringify(hookInput(f, "Stop")),
+  });
+  assert.equal(runtime.status, 1);
+  assert.equal(runtime.stdout, "");
+  assert.equal(runtime.stderr, "HANDOFF_HOOK_FAILURE\n");
+  assert.equal(runtime.stderr.includes(f.base), false);
+  assert.equal(runtime.stderr.includes(f.id), false);
 });
 
 test("Stop handles short or tool-free tasks and stop_hook_active always passes", async function (t) {
@@ -662,7 +690,8 @@ test("Windows 8.3 aliases survive the real CLI receipt and authorized scan", asy
 
   const shortDocument = path.join(shortBase, "HANDOFF.md");
   await writeFile(shortDocument, "# HANDOFF\n\nWindows short-path receipt.\n");
-  const scan = JSON.parse(spawnSync(process.execPath, [script, "scan", shortDocument], {
+  const scan = JSON.parse(spawnSync(process.execPath, [script, "scan"], {
+    input: JSON.stringify({ workspace_root: shortBase, document_path: shortDocument }),
     encoding: "utf8",
     env: environment,
   }).stdout);
@@ -771,25 +800,72 @@ test("scanner rejects secrets and handoff capabilities without echoing values", 
   assert.equal(scanSecrets("TOKEN=<redacted>").length, 0);
 });
 
-test("scan CLI returns only findings and same-handle digest metadata", async function (t) {
+test("manual scanner keeps hostile document paths out of argv and roots them by workspace", async function (t) {
+  await mkdir(workRoot, { recursive: true });
+  const base = await mkdtemp(path.join(workRoot, "test-scan-$() & '-"));
+  t.after(async function () { await rm(base, { recursive: true, force: true }); });
+  const target = path.join(base, "HANDOFF.md");
+  await writeFile(target, "# HANDOFF\n");
+  const request = { workspace_root: base, document_path: target };
+  assert.equal((await scanManualRequest(request)).ok, true);
+
+  const script = path.join(projectRoot, "scripts", "context-handoff.mjs");
+  const scanned = spawnSync(process.execPath, [script, "scan"], {
+    encoding: "utf8",
+    input: JSON.stringify(request),
+  });
+  assert.equal(scanned.status, 0);
+  assert.equal(scanned.stderr, "");
+  assert.equal(JSON.parse(scanned.stdout).ok, true);
+
+  const legacyArgv = spawnSync(process.execPath, [script, "scan", target], {
+    encoding: "utf8",
+  });
+  assert.equal(legacyArgv.status, 3);
+  assert.deepEqual(JSON.parse(legacyArgv.stdout), {
+    ok: false,
+    error: "INVALID_SCAN_REQUEST",
+    findings: [],
+  });
+
+  const oversized = spawnSync(process.execPath, [script, "scan"], {
+    encoding: "utf8",
+    input: JSON.stringify({ workspace_root: "x".repeat(70 * 1024), document_path: target }),
+  });
+  assert.equal(oversized.status, 3);
+  assert.equal(JSON.parse(oversized.stdout).error, "INVALID_SCAN_REQUEST");
+
+  const nested = path.join(base, "nested");
+  await mkdir(nested);
+  const outsideRoot = path.join(nested, "HANDOFF.md");
+  await writeFile(outsideRoot, "# HANDOFF\n");
+  assert.equal((await scanManualRequest({
+    workspace_root: base,
+    document_path: outsideRoot,
+  })).error, "INVALID_SCAN_TARGET");
+});
+
+test("scan CLI returns only findings and same-handle digest metadata through stdin", async function (t) {
   const f = await fixtureSession(t, tokenEvent(1, 258400));
   const target = path.join(f.base, "HANDOFF.md");
   const secret = "sk-" + "Q".repeat(32);
   await writeFile(target, "OPENAI_API_KEY=" + secret);
-  await assert.rejects(
-    execFile(process.execPath, [path.join(projectRoot, "scripts", "context-handoff.mjs"), "scan", target]),
-    function (error) {
-      assert.equal(error.code, 2);
-      assert.equal(error.stdout.includes(secret), false);
-      const output = JSON.parse(error.stdout);
-      assert.equal(output.ok, false);
-      assert.match(output.sha256, /^[a-f0-9]{64}$/);
-      assert.ok(output.findings.every(function (finding) {
-        return Object.keys(finding).sort().join(",") === "line,ruleId";
-      }));
-      return true;
+  const scanned = spawnSync(
+    process.execPath,
+    [path.join(projectRoot, "scripts", "context-handoff.mjs"), "scan"],
+    {
+      encoding: "utf8",
+      input: JSON.stringify({ workspace_root: f.base, document_path: target }),
     },
   );
+  assert.equal(scanned.status, 2);
+  assert.equal(scanned.stdout.includes(secret), false);
+  const output = JSON.parse(scanned.stdout);
+  assert.equal(output.ok, false);
+  assert.match(output.sha256, /^[a-f0-9]{64}$/);
+  assert.ok(output.findings.every(function (finding) {
+    return Object.keys(finding).sort().join(",") === "line,ruleId";
+  }));
 });
 
 test("title normalization removes Cc/Cf and long titles advance without duplicate suffixes", function () {
@@ -849,6 +925,29 @@ test("cleanup retires stale state and caps records at 100", async function (t) {
   assert.equal(remaining.length, 100);
 });
 
+test("Windows Hook command treats a hostile PLUGIN_ROOT value as data", async function (t) {
+  if (process.platform !== "win32") return t.skip("Windows-only shell quoting regression");
+  const shell = process.env.SHELL;
+  if (!shell || !path.isAbsolute(shell)) return t.skip("absolute PowerShell unavailable");
+  await mkdir(workRoot, { recursive: true });
+  const pluginRoot = await mkdtemp(path.join(workRoot, "test-hook-$() & '-"));
+  t.after(async function () { await rm(pluginRoot, { recursive: true, force: true }); });
+  const scripts = path.join(pluginRoot, "scripts");
+  await mkdir(scripts);
+  await writeFile(
+    path.join(scripts, "context-handoff.mjs"),
+    "if (process.argv[2] !== 'hook') process.exitCode = 2; else process.stdout.write('HOOK_OK');\n",
+  );
+  const hooks = JSON.parse(await readFile(path.join(projectRoot, "hooks", "hooks.json"), "utf8"));
+  const command = hooks.hooks.PreToolUse[0].hooks[0].commandWindows;
+  const result = spawnSync(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+    env: { ...process.env, PLUGIN_ROOT: pluginRoot },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "HOOK_OK");
+});
+
 test("manifest, hooks, and manuals preserve compatibility and safe matchers", async function () {
   const manifest = JSON.parse(await readFile(path.join(projectRoot, ".codex-plugin", "plugin.json"), "utf8"));
   assert.match(manifest.version, /^0\.3\.0(?:\+codex\.[0-9A-Za-z.-]+)?$/);
@@ -868,8 +967,9 @@ test("manifest, hooks, and manuals preserve compatibility and safe matchers", as
   });
   assert.equal(handlers.length, 5);
   for (const handler of handlers) {
-    assert.equal(handler.command, 'node "${PLUGIN_ROOT}/scripts/context-handoff.mjs" hook');
-    assert.equal(handler.commandWindows, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -Command node "$env:PLUGIN_ROOT/scripts/context-handoff.mjs" hook');
+    assert.equal(handler.command, 'node "$PLUGIN_ROOT/scripts/context-handoff.mjs" hook');
+    assert.equal(handler.commandWindows, 'node "$env:PLUGIN_ROOT/scripts/context-handoff.mjs" hook');
+    assert.doesNotMatch(handler.commandWindows, /Windows\\System32|-Command/);
   }
   const skill = await readFile(path.join(projectRoot, "skills", "generate-handoff-document", "SKILL.md"), "utf8");
   const english = await readFile(path.join(projectRoot, "commands", "handoff.md"), "utf8");
@@ -880,6 +980,9 @@ test("manifest, hooks, and manuals preserve compatibility and safe matchers", as
   assert.match(english, /Manual mode/);
   assert.match(chinese, /手动模式/);
   assert.doesNotMatch(skill, /AUTO_HANDOFF_REQUEST/);
+  assert.match(skill, /\["node","<plugin-root>\/scripts\/context-handoff\.mjs","scan"\]/);
+  assert.match(skill, /"workspace_root":"<absolute workspace root>"/);
+  assert.doesNotMatch(skill, /scan\s+"<absolute-HANDOFF-path>"/);
 });
 
 test("golden HANDOFF preserves one H1 plus fourteen ordered H2 headings", async function () {

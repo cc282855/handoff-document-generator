@@ -30,6 +30,7 @@ export const MAX_STATE_RECORDS = 100;
 export const MAX_BROKER_RECORDS = 300;
 export const MAX_SCAN_BYTES = 16 * 1024 * 1024;
 export const MAX_PROJECTED_TOOL_TOKENS = 65_536n;
+const HOOK_FAILURE_DIAGNOSTIC = "HANDOFF_HOOK_FAILURE\n";
 
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
 const REQUEST_RE = /^[A-Za-z0-9_-]{32}$/;
@@ -604,6 +605,21 @@ export async function scanFile(filePath, options = {}) {
   }
 }
 
+export async function scanManualRequest(input) {
+  if (
+    !input ||
+    typeof input !== "object" ||
+    Array.isArray(input) ||
+    typeof input.workspace_root !== "string" ||
+    typeof input.document_path !== "string"
+  ) return { ok: false, error: "INVALID_SCAN_REQUEST", findings: [] };
+  const workspaceRoot = await canonicalWorkspaceRoot(input.workspace_root);
+  if (!workspaceRoot) return { ok: false, error: "INVALID_SCAN_REQUEST", findings: [] };
+  const documentPath = await canonicalHandoffPath(input.document_path, workspaceRoot);
+  if (!documentPath) return { ok: false, error: "INVALID_SCAN_TARGET", findings: [] };
+  return scanFile(documentPath);
+}
+
 function hashValue(value) {
   return createHash("sha256").update(String(value), "utf8").digest("hex");
 }
@@ -1049,7 +1065,7 @@ function hookSignal(eventName, request, deniedTool) {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: "Automatic handoff safety guard reached; this tool was not executed.",
+        permissionDecisionReason: "Handoff Document Generator plugin safety guard reached; this tool was not executed.",
         additionalContext: marker,
       },
     };
@@ -1194,8 +1210,7 @@ export async function handleHookEvent(input, options = {}) {
     });
     return locked.acquired ? locked.value : null;
   } catch {
-    // Hooks are fail-open. Manual /handoff remains available.
-    return null;
+    throw new Error("HANDOFF_HOOK_RUNTIME_FAILURE");
   }
 }
 
@@ -1521,7 +1536,8 @@ export async function runCli(argv = process.argv) {
       const output = await handleHookEvent(JSON.parse(await readStdin(32 * 1024 * 1024)));
       if (output) process.stdout.write(JSON.stringify(output));
     } catch {
-      // Fail open and stay silent so a Hook failure never blocks Codex.
+      process.stderr.write(HOOK_FAILURE_DIAGNOSTIC);
+      process.exitCode = 1;
     }
     return;
   }
@@ -1549,9 +1565,14 @@ export async function runCli(argv = process.argv) {
     return;
   }
   if (command === "scan") {
-    const output = await scanFile(argv[3]);
-    process.stdout.write(JSON.stringify(output));
-    if (!output.ok) process.exitCode = output.findings?.length ? 2 : 3;
+    try {
+      const output = await scanManualRequest(JSON.parse(await readStdin(64 * 1024)));
+      process.stdout.write(JSON.stringify(output));
+      if (!output.ok) process.exitCode = output.findings?.length ? 2 : 3;
+    } catch {
+      process.stdout.write(JSON.stringify({ ok: false, error: "INVALID_SCAN_REQUEST", findings: [] }));
+      process.exitCode = 3;
+    }
     return;
   }
   if (command === "scan-authorized") {
