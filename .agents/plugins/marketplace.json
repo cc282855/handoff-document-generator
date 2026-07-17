@@ -1,0 +1,20 @@
+{
+  "name": "handoff-document-generator",
+  "interface": {
+    "displayName": "交接文档生成器"
+  },
+  "plugins": [
+    {
+      "name": "handoff-document-generator",
+      "source": {
+        "source": "local",
+        "path": "./plugins/handoff-document-generator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
