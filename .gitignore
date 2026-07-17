@@ -1,4 +1,40 @@
-.DS_Store
-Thumbs.db
-*.log
-node_modules/
+.codex/state/
+.codex/ralph-loop/
+.codex/hooks.json
+work/
+__pycache__/
+*.py[cod]
+
+# Generated handoff and local runtime state
+HANDOFF*.md
+!tests/fixtures/HANDOFF.golden.md
+PLUGIN_DATA/
+plugin-data/
+context-handoff-v1/
+context-handoff-v2/
+runtime-state/
+
+# Credentials and local environment
+.env
+.env.*
+auth.json
+**/auth.json
+secrets/
+**/secrets/
+*.pem
+*.key
+*.p12
+
+# Codex/session databases and transcripts
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db-wal
+*.db-shm
+*.jsonl
+logs/
+**/logs/
+screenshots/
+**/screenshots/
+transcripts/
+**/transcripts/
