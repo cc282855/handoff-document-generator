@@ -1,7 +1,7 @@
 {
   "name": "handoff-document-generator",
   "interface": {
-    "displayName": "交接文档生成器"
+    "displayName": "交接文档生成器 / Handoff Document Generator"
   },
   "plugins": [
     {
