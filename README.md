@@ -1,4 +1,4 @@
-# 交接文档生成器
+# 交接文档生成器 / Handoff Document Generator
 
 handoff-document-generator 0.3.0 保留 /handoff、/交接文档和自然语言手动交接，并增加“在 Codex 自动压缩前尽量完成安全交接”的自动流程。它生成 HANDOFF.md、进行确定性秘密扫描、创建干净的新任务，并把任务名延续为简洁中文标题加 （续接 N）。
 
