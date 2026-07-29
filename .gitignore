@@ -14,6 +14,14 @@ context-handoff-v1/
 context-handoff-v2/
 runtime-state/
 
+# Generated project backup snapshots and interrupted staging directories
+项目备份/
+**/项目备份/
+*（项目备份）/
+**/*（项目备份）/
+.backup-*.lock/
+.*.partial-*/
+
 # Credentials and local environment
 .env
 .env.*
